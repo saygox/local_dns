@@ -1,34 +1,45 @@
 
 # local_dns
 
-開発用に使うローカルDNS。webapiでドメイン名の追加削除を行う  
-/etc/hostsや dnsmasq と同等だがwebapiで操作できることを特徴とする
+Local DNS for development use. Add and delete domain names via web API.  
+Similar to /etc/hosts or dnsmasq but operable via web API.
 
-## 作成方法
+## How to Build
 ```sh
 go build
 ```
 
-## かんたんな使い方
+## Simple Usage
+
+Start with the following command
+
 ```sh
 ./local_dns
 ```
-2053ポートでDNSを、2080ポートでwebapiを受け付ける
+Accepts DNS on port 2053 and web API on port 2080.
+You can change the ports using the `--dns-port` and `--http-port` parameters.
 
-## ドメイン名の追加例
+
+## Example of Adding a Domain Name
+
+To set `test.example.com` to localhost, use the following web API:
+
+
 ```sh
-curl -POST http://localhost:2080/api --json '{"test.example.com.":"127.0.0.1"}'
+curl -POST http://localhost:2080/api --json '{"test.example.com":"127.0.0.1"}'
 ```
 
-## 動作確認
+Verification
 ```sh
 dig @localhost:2053 test.example.com
-```
-```
-test.example.com. 60 IN A 127.0.0.1
+#:
+#test.example.com. 60 IN A 127.0.0.1
+#:
 ```
 
-## minikubeでnginxを起動させるときの例
+## Example of Starting Nginx on Minikube
+
+As a simple usage example, here is how to set up an Nginx server on Minikube and access it via `www.example.com` from a browser.
 
 ```
 # minikube initialize
@@ -62,14 +73,13 @@ spec:
 EOF
 kubectl apply -f ingress-nginx.yaml
 
-# regist minikube ip as www.example.com 
+# register minikube IP as www.example.com 
 curl -POST http://localhost:2080/api --json "{\"www.example.com.\":\"$(minikube ip)\"}"
 ```
 
+## Integration into Development Machine
 
-## 開発マシンへの統合
-
-### ubuntu22.04, 24.04 などの設定方法(systemd-resolved)
+Install in the execution directory of the machine as follows
 
 ```sh
 go build
@@ -77,8 +87,13 @@ sudo mv local_dns /usr/local/bin/
 sudo chown nobody:nogroup /usr/local/bin/local_dns
 ```
 
-#### systemctlに登録、起動するようにする
-`/etc/systemd/system/local_dns.service`
+
+
+### Configuration for Ubuntu 22.04, 24.04, etc. (systemd-resolved)
+
+Register and Start with systemctl
+
+Create `/etc/systemd/system/local_dns.service` as follows
 ```
 [Unit]
 Description=local_dns
@@ -103,32 +118,40 @@ sudo systemctl enable local_dns.service
 sudo systemctl start local_dns.service
 ```
 
-#### 現状のDNSを取得
+Retrieve the current DNS. Remember the obtained `****.****.****.****`
 ```sh
 resolvectl dns `awk '$2 == "00000000" {print $1}' /proc/net/route` |awk '{print $NF}'
-```
-```
-****.****.****.****
+# ****.****.****.****
 ```
 
-#### `/etc/systemd/resolved.conf` を変更
+Modify `/etc/systemd/resolved.conf` to call local_dns.
+Set the fallback to the current DNS to ensure functionality even if there are issues with local_dns.
+
 ```
 DNS=127.0.0.1:2053
 FallbackDNS=****.****.****.****
 ```
 
-#### systemd-resolvedを再起動
+Restart systemd-resolved to use local_dns
 ```sh
 sudo systemctl restart systemd-resolved
 ```
 
-## コマンド例
-```sh
-curl http://172.18.0.2/api
-curl -POST http://172.18.0.2/api -d '{"hoge.":"127.0.0.1"}'
-dig @172.18.0.2 hoge
-curl -DELETE http://172.18.0.2/api -d '["hoge"]'
-```
+## Command
 
-## 参考
+### webapi
+```sh
+# Get a list of domains held by local_dns
+curl http://localhost/api
+
+# Set a new domain
+curl -POST http://localhost/api -d '{"foo":"127.0.0.1"}'
+
+# Delete a domain. Either the domain name or the IP address can be used
+curl -DELETE http://localhost/api -d '["foo"]'
+
+
+
+## Reference
 [https://jameshfisher.com/2017/08/04/golang-dns-server/](https://jameshfisher.com/2017/08/04/golang-dns-server/)
+
