@@ -90,6 +90,6 @@ func apihandler(w http.ResponseWriter, r *http.Request) {
 func http_handleRequests(port int) {
 	http.HandleFunc("/api", apihandler)
 	go func() {
-		log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), nil))
+		log.Fatal(http.ListenAndServe("127.0.0.1:"+strconv.Itoa(port), nil))
 	}()
 }
