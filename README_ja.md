@@ -10,25 +10,38 @@ go build
 ```
 
 ## かんたんな使い方
+
+以下コマンドで起動する
+
 ```sh
 ./local_dns
 ```
 2053ポートでDNSを、2080ポートでwebapiを受け付ける
 
+` --dns-port`, `--http-port` パラメータでポート変更が可能
+
+
 ## ドメイン名の追加例
+
+
+test.example.comをローカルホストに設定する場合、以下のようにWEBAPIを使う
+
+
 ```sh
-curl -POST http://localhost:2080/api --json '{"test.example.com.":"127.0.0.1"}'
+curl -POST http://localhost:2080/api --json '{"test.example.com":"127.0.0.1"}'
 ```
 
-## 動作確認
+動作確認
 ```sh
 dig @localhost:2053 test.example.com
-```
-```
-test.example.com. 60 IN A 127.0.0.1
+#:
+#test.example.com. 60 IN A 127.0.0.1
+#:
 ```
 
 ## minikubeでnginxを起動させるときの例
+
+かんたんな使用例としてminikubeで建てたenginxサーバーをブラウザからww.example.comでアクセスさせる例を示す
 
 ```
 # minikube initialize
