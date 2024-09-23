@@ -61,19 +61,28 @@ func apihandler(w http.ResponseWriter, r *http.Request) {
 		mu.Lock() // Write lock
 		defer mu.Unlock()
 		queryParams := r.URL.Query()
+		del_address := queryParams.Get("address")
 		del_domain := queryParams.Get("domain")
+
+
+		if del_domain == "" || del_address == "" {
+			domainsToAddresses = make(map[string]string)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if del_domain != "" {
 			if del_domain[len(del_domain)-1] == '.' {
 				del_domain = del_domain[:len(del_domain)-1]
 			}
 		}
-		del_address := queryParams.Get("address")
 
 		for domain, address := range domainsToAddresses {
 			if domain == del_domain || address == del_address {
 				delete(domainsToAddresses, domain)
 			}
 		}
+		w.WriteHeader(http.StatusOK)
+
 	} else {
 		// Handle unsupported HTTP methods.
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -84,12 +93,15 @@ func apihandler(w http.ResponseWriter, r *http.Request) {
 // http_handleRequests starts an HTTP server on the specified port and handles requests to the "/api" endpoint.
 // It registers the apihandler function to handle requests to the "/api" endpoint and runs the server in a separate goroutine.
 // If the server encounters a fatal error, it logs the error and terminates the program.
-//
-// Parameters:
-//   port (int): The port number on which the HTTP server will listen for incoming requests.
-func http_handleRequests(port int) {
+func http_handleRequests() {
 	http.HandleFunc("/api", apihandler)
 	go func() {
-		log.Fatal(http.ListenAndServe("127.0.0.1:"+strconv.Itoa(port), nil))
+		var ip_port string
+		if config.LocalhostOnly {
+			ip_port = "127.0.0.1:"+strconv.Itoa(config.HTTPPort)
+		}	else {
+			ip_port = ":"+strconv.Itoa(config.HTTPPort)
+		}
+		log.Fatal(http.ListenAndServe(ip_port, nil))
 	}()
 }

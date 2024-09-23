@@ -1,8 +1,7 @@
-
 # local_dns
 
 Local DNS for development use. Add and delete domain names via web API.  
-Similar to /etc/hosts or dnsmasq but operable via web API.
+`/etc/hosts` and `dnsmasq` require `sudo`, but this tool can be used without it.
 
 ## How to Build
 ```sh
@@ -31,11 +30,57 @@ curl -POST http://localhost:2080/api --json '{"test.example.com":"127.0.0.1"}'
 
 Verification
 ```sh
-dig @localhost:2053 test.example.com
+dig @localhost -p 2053 test.example.com
 #:
 #test.example.com. 60 IN A 127.0.0.1
 #:
 ```
+
+## Command
+
+### Starting the Service
+
+You can change the behavior of `local_dns` by specifying parameters when starting it.
+
+```sh
+# Open DNS on port 53 and HTTP on port 80
+./local_dns --dns-port 53 --http-port 80
+
+# Similarly, you can set it via environment variables
+LOCALDNS_DNS_PORT=53 LOCALDNS_HTTP_PORT=80 ./local_dns
+
+# Set a fallback DNS
+./local_dns --fallback-ip 8.8.8.8
+```
+
+| Parameter         | Environment Variable      | Default | Description                                |
+|:------------------|:--------------------------|:--------|:-------------------------------------------|
+| `--dns-port`      | `LOCALDNS_DNS_PORT`       | 2053    | DNS port                                   |
+| `--http-port`     | `LOCALDNS_HTTP_PORT`      | 2080    | HTTP port                                  |
+| `--localhost-only`| `LOCALDNS_LOCALHOST_ONLY` | true    | Prohibit WebAPI access from non-127.0.0.1  |
+| `--fallback-ip`   | `LOCALDNS_FALLBACK_IP`    | n/a     | Server to query if the domain name is not found |
+| `--DEBUG`         | `LOCALDNS_DEBUG`          | false   | Output debug logs                          |
+
+### webapi
+
+You can add, delete, and check domain names using the web API.
+
+```sh
+# Get a list of domains held by local_dns
+curl http://localhost:2080/api
+
+# Set a new domain
+curl -POST http://localhost:2080/api -d '{"hoge":"192.168.1.2"}'
+
+# Delete a domain. Either the domain name or the IP address can be used
+curl -DELETE http://localhost:2080/api?domain=hoge
+curl -DELETE http://localhost:2080/api?address=192.168.1.2
+
+# Delete all domains
+curl -DELETE http://localhost:2080/api
+```
+
+
 
 ## Example of Starting Nginx on Minikube
 
@@ -112,6 +157,7 @@ WorkingDirectory=/usr/local/bin
 WantedBy=multi-user.target
 ```
 
+Start the local_dns.service
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable local_dns.service
@@ -128,6 +174,7 @@ Modify `/etc/systemd/resolved.conf` to call local_dns.
 Set the fallback to the current DNS to ensure functionality even if there are issues with local_dns.
 
 ```
+[Resolve]
 DNS=127.0.0.1:2053
 FallbackDNS=****.****.****.****
 ```
@@ -137,21 +184,7 @@ Restart systemd-resolved to use local_dns
 sudo systemctl restart systemd-resolved
 ```
 
-## Command
-
-### webapi
-```sh
-# Get a list of domains held by local_dns
-curl http://localhost/api
-
-# Set a new domain
-curl -POST http://localhost/api -d '{"foo":"127.0.0.1"}'
-
-# Delete a domain. Either the domain name or the IP address can be used
-curl -DELETE http://localhost/api -d '["foo"]'
-
-
-
 ## Reference
-[https://jameshfisher.com/2017/08/04/golang-dns-server/](https://jameshfisher.com/2017/08/04/golang-dns-server/)
+
+- [How to write a DNS server in Go](https://jameshfisher.com/2017/08/04/golang-dns-server/)
 

@@ -42,17 +42,22 @@ func localDNS_handler(w dns.ResponseWriter, r *dns.Msg) {
     if isLoopback {
         w.WriteMsg(&msg)
         return
+    } else if !config.UseFallback{
+        dns.HandleFailed(w, r)
+        return
     }
-    log.Printf("Domain not found: %s\n", r.Question[0].Name)
 
+    if config.IsDebug {
+        log.Printf("Domain not found: %s\n", r.Question[0].Name)
+    }
     // If the domain is not found, return a SERVFAIL response
-    // Forward the request to an external DNS server (e.g., 8.8.8.8) if the domain is not found
+    // Forward the request to an external DNS server (e.g., 8.8.8.8:53) if the domain is not found
     client := new(dns.Client)
     message := new(dns.Msg)
     message.SetQuestion(r.Question[0].Name, r.Question[0].Qtype)
-    response, _, err := client.Exchange(message, "8.8.8.8:53")
+    response, _, err := client.Exchange(message, config.FallbackIP)
     if err != nil {
-        log.Printf("Failed to forward request to 8.8.8.8: %v", err)
+        log.Printf("Failed to forward request to %s: %v", config.FallbackIP, err)
         dns.HandleFailed(w, r)
         return
     }
@@ -66,18 +71,12 @@ func localDNS_handler(w dns.ResponseWriter, r *dns.Msg) {
 
 // dns_handleRequests starts a DNS server on the specified port.
 // The server listens for UDP requests and uses a custom handler to process them.
-//
-// Parameters:
-//   port (int): The port number on which the DNS server will listen.
-//
-// Example usage:
-//   dns_handleRequests(8053) // Starts the DNS server on port 8053
-func dns_handleRequests(port int) {
+func dns_handleRequests() {
     go func() {
         dns.HandleFunc(".", localDNS_handler)
         defer dns.HandleRemove(".")
 
-        srv := &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "udp"}
+        srv := &dns.Server{Addr: ":" + strconv.Itoa(config.DNSPort), Net: "udp"}
         if err := srv.ListenAndServe(); err != nil {
             log.Fatalf("Failed to set udp listener %s\n", err.Error())
         }

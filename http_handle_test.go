@@ -117,4 +117,30 @@ func TestHttpHandleRequests(t *testing.T) {
 		}
 	})
 
+	t.Run("DELETE /api all address", func(t *testing.T) {
+		// First, add a domain to delete
+		mu.Lock()
+		domainsToAddresses = map[string]string{
+			"example.net": "192.168.1.2",
+			"test.example.net": "192.168.1.3",
+		}
+		mu.Unlock()
+
+		// Now, delete the domain by address
+		req, _ := http.NewRequest("DELETE", "/api", nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		if status := rr.Code; status != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+		}
+
+		mu.RLock()
+		if len(domainsToAddresses) != 0 {
+			t.Errorf("handler did not delete all domains: got %v want 0", len(domainsToAddresses))
+		}
+		mu.RUnlock()
+	})
+
+
 }
