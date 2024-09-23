@@ -2,15 +2,24 @@ package main
 
 import (
 	"log"
-	"net"
 	"os"
-	"strconv"
+	"regexp"
 	"sync"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
-var defaultDNSName string= "dns.example.com"
-var defaultDNSPort int= 2053
-var defaultHTTPPort int= 2080
+type Config struct {
+	DNSPort       int
+	HTTPPort      int
+	IsDebug       bool
+	FallbackIP    string
+	LocalhostOnly bool
+	UseFallback   bool
+    // UseLocakSocket bool
+    // LocalSocketFile string
+}
 
 var (
     domainsToAddresses map[string]string = map[string]string{
@@ -18,126 +27,105 @@ var (
     mu sync.RWMutex
 )
 
+var config Config
+var ipPortRegex = regexp.MustCompile(`^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d{1,5})?$`)
 
-func set_localaddrss(dnsName string) {
 
-    // Get the machine's IP addresses
-    addrs, err := net.InterfaceAddrs()
-    if err != nil {
-        log.Fatalf("Failed to get IP addresses: %v", err)
-    }
+var rootCmd = &cobra.Command{
+	Use:   "localDNS",
+	Short: "easy to use local DNS service",
+	Run: func(cmd *cobra.Command, args []string) {
+		if cmd.Flag("help").Changed {
+			// Display help and exit
+			cmd.Help()
+			os.Exit(0)
+		}
 
-    // Find a non-loopback IP address
-    var machineIP string
-    for _, addr := range addrs {
-        // Skip loopback addresses
-        if addr.String() == "127.0.0.1/8" {
-            continue
-        }
-        if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
-            if ipNet.IP.To4() != nil {
-                machineIP = ipNet.IP.String()
-                break
-            }
-        }
-    }
+		// ENV settings is not set
+		if viper.IsSet("dns_port"){
+			config.DNSPort = viper.GetInt("dns_port")
+		}
+		if viper.IsSet("http_port"){
+			config.HTTPPort = viper.GetInt("http_port")
+		}
+		if viper.IsSet("debug"){
+			config.IsDebug = viper.GetBool("debug")
+		}
+		if viper.IsSet("localhost_only"){
+			config.LocalhostOnly = viper.GetBool("localhost_only")
+		}
+		if viper.IsSet("fallback_ip"){
+			config.FallbackIP = viper.GetString("fallback_ip")
+		}
 
-    if machineIP == "" {
-        log.Fatalf("No non-loopback IP address found")
-    }
+		config.UseFallback = false
+		if config.FallbackIP != "" {
+			matches := ipPortRegex.FindStringSubmatch(config.FallbackIP)
+			if matches != nil {
+				config.UseFallback = true
+				if matches[2] == "" {
+					config.FallbackIP = matches[1] + ":53"
+				}
+			}
+		}
 
-    // Add the machine's IP address to the domainsToAddresses map
-    mu.Lock()
-    domainsToAddresses[dnsName] = machineIP
-    mu.Unlock()
+		log.Println("Start local_dns: ",version)
+		if config.IsDebug {
+			// Processing when the command is executed
+			log.Println("DNS Port:", config.DNSPort)
+			if config.UseFallback {
+				log.Println("Fallback IP:", config.FallbackIP)
+			}
+			log.Println("HTTP Port:", config.HTTPPort)
+			log.Println("Localhost Only:", config.LocalhostOnly)
+			log.Println("Is Debug:", config.IsDebug)
+		}
 
-    // Log the current domain to address mappings
-    mu.RLock()
-    for domain, address := range domainsToAddresses {
-        log.Printf("Domain: %s, Address: %s\n", domain, address)
-    }
-    mu.RUnlock()
+		http_handleRequests()
+		dns_handleRequests()
+		select {}
+	},
 }
 
-func getConfig() (string, int, int, bool) {
-    var dnsName string = defaultDNSName
-    var dnsPort int = defaultDNSPort
-    var httpPort int = defaultHTTPPort
-    var debug bool = false
 
-    // Check environment variables first
-    if dnsNameEnv := os.Getenv("DNS_NAME"); dnsNameEnv != "" {
-        dnsName = dnsNameEnv
-        if dnsName[len(dnsName)-1] != '.' {
-            dnsName += "."
-        }
-    }
+func init(){
 
-    if dnsPortEnv := os.Getenv("DNS_PORT"); dnsPortEnv != "" {
-        if port, err := strconv.Atoi(dnsPortEnv); err == nil {
-            dnsPort = port
-        }
-    }
+	rootCmd.Version = version
+	rootCmd.SetVersionTemplate("local_dns: {{.Version}}\n")
 
-    if httpPortEnv := os.Getenv("HTTP_PORT"); httpPortEnv != "" {
-        if port, err := strconv.Atoi(httpPortEnv); err == nil {
-            httpPort = port
-        }
-    }
+	// Initialize flags (map to struct fields)
+	rootCmd.PersistentFlags().IntVar(&config.DNSPort, "dns-port", 2053, "DNS port")
+	rootCmd.PersistentFlags().IntVar(&config.HTTPPort, "http-port", 2080, "HTTP port")
+	rootCmd.PersistentFlags().BoolVar(&config.IsDebug, "debug", false, "Enable debug logs")
+	rootCmd.PersistentFlags().BoolVar(&config.LocalhostOnly, "localhost-only", true, "Limit HTTP port to localhost")
+	rootCmd.PersistentFlags().StringVar(&config.FallbackIP, "fallback-ip", "", "DNS fallback IP")
 
-    if debugEnv := os.Getenv("DEBUG"); debugEnv != "" {
-        if debugEnv == "true" {
-            debug = true
-        }
-    }
+	// Synchronize environment variables and flags with Viper
+	viper.BindPFlag("dns_port", rootCmd.PersistentFlags().Lookup("dns-port"))
+	viper.BindPFlag("http_port", rootCmd.PersistentFlags().Lookup("http-port"))
+	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
+	viper.BindPFlag("localhost_only", rootCmd.PersistentFlags().Lookup("localhost-only"))
+	viper.BindPFlag("fallback_ip", rootCmd.PersistentFlags().Lookup("fallback-ip"))
 
-    // Override with command line arguments if provided
-    for i := 1; i < len(os.Args); i++ {
-        switch os.Args[i] {
-        case "--name":
-            if i+1 < len(os.Args) {
-                dnsName = os.Args[i+1]
-                if dnsName[len(dnsName)-1] != '.' {
-                    dnsName += "."
-                }
-                i++
-            } else {
-                log.Fatalf("Missing value for --name")
-            }
-        case "--dns-port":
-            if i+1 < len(os.Args) {
-                if port, err := strconv.Atoi(os.Args[i+1]); err == nil {
-                    dnsPort = port
-                    i++
-                } else {
-                    log.Fatalf("Invalid value for --dns-port: %v", err)
-                }
-            } else {
-                log.Fatalf("Missing value for --dns-port")
-            }
-        case "--http-port":
-            if i+1 < len(os.Args) {
-                if port, err := strconv.Atoi(os.Args[i+1]); err == nil {
-                    httpPort = port
-                    i++
-                } else {
-                    log.Fatalf("Invalid value for --http-port: %v", err)
-                }
-            } else {
-                log.Fatalf("Missing value for --http-port")
-            }
-        case "--debug":
-            debug = true
-        }
-    }
-    return dnsName, dnsPort, httpPort, debug
+	// Set the prefix for environment variables (e.g., LOCALDNS_DNS_PORT, LOCALDNS_FALLBACK_IP, etc.)
+	viper.SetEnvPrefix("LOCALDNS")
+	viper.BindEnv("DNS_PORT")
+	viper.BindEnv("HTTP_PORT")
+	viper.BindEnv("DEBUG")
+	viper.BindEnv("LOCALHOST_ONLY")
+	viper.BindEnv("FALLBACK_IP")
+	viper.AutomaticEnv()
+
+
+	// Read in environment variables and set config values
+	if err := viper.Unmarshal(&config); err != nil {
+		log.Fatalf("unable to decode into struct, %v", err)
+	}
 }
+
 
 func main() {
-    dnsName, dnsPort, httpPort, _ := getConfig()
-
-    set_localaddrss(dnsName)
-    http_handleRequests(httpPort)
-    dns_handleRequests(dnsPort)
-    select {}
+	if err := rootCmd.Execute(); err != nil {
+        log.Fatalf("%v\n", err)
+	}
 }
